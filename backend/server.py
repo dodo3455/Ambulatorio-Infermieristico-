@@ -306,11 +306,11 @@ class SchedaImpiantoPICC(BaseModel):
     controllo_rx: Optional[bool] = None
     controllo_ecg: Optional[bool] = None
     modalita: Optional[str] = None
-    motivazione: List[str] = []
+    motivazione: Optional[List[str]] = []
     motivazione_altro: Optional[str] = None
     data_posizionamento: Optional[str] = None
     operatore: Optional[str] = None
-    allegati: List[str] = []
+    allegati: Optional[List[str]] = []
     # Legacy fields
     data_impianto: Optional[str] = None
     sede: Optional[str] = None
