@@ -1453,7 +1453,7 @@ async def get_implant_statistics(
 
 def generate_patient_pdf_section(patient: dict, schede_med: list, schede_impianto: list, schede_gestione: list, section: str = "all") -> bytes:
     """Generate PDF for a specific section of the patient folder
-    section: 'all', 'anagrafica', 'medicazione', 'impianto'
+    section: 'all', 'anagrafica', 'medicazione', 'impianto', 'gestione'
     """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
@@ -2031,7 +2031,7 @@ def generate_patient_zip(patient: dict, schede_med: list, schede_impianto: list,
 @api_router.get("/patients/{patient_id}/download/pdf")
 async def download_patient_pdf(patient_id: str, section: str = "all", payload: dict = Depends(verify_token)):
     """Download patient folder as PDF - with optional section filter
-    section: 'all', 'anagrafica', 'medicazione', 'impianto'
+    section: 'all', 'anagrafica', 'medicazione', 'impianto', 'gestione'
     """
     patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
     if not patient:
@@ -2049,12 +2049,14 @@ async def download_patient_pdf(patient_id: str, section: str = "all", payload: d
     
     if section in ["all", "impianto"]:
         schede_impianto = await db.schede_impianto_picc.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
+    
+    if section in ["all", "gestione"]:
         schede_gestione = await db.schede_gestione_picc.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
     
     # Generate PDF with the appropriate section
     pdf_data = generate_patient_pdf_section(patient, schede_med, schede_impianto, schede_gestione, section)
     
-    section_names = {"all": "completa", "anagrafica": "anagrafica", "medicazione": "medicazione", "impianto": "impianto"}
+    section_names = {"all": "completa", "anagrafica": "anagrafica", "medicazione": "medicazione", "impianto": "impianto", "gestione": "gestione_picc"}
     section_name = section_names.get(section, section)
     filename = f"cartella_{section_name}_{patient.get('cognome', 'paziente')}_{patient.get('nome', '')}.pdf"
     
