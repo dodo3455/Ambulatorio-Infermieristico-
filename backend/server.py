@@ -1450,6 +1450,273 @@ async def get_implant_statistics(
     }
 
 # ============== PATIENT FOLDER DOWNLOAD ==============
+
+def generate_patient_pdf_section(patient: dict, schede_med: list, schede_impianto: list, schede_gestione: list, section: str = "all") -> bytes:
+    """Generate PDF for a specific section of the patient folder
+    section: 'all', 'anagrafica', 'medicazione', 'impianto'
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=18, spaceAfter=30, alignment=TA_CENTER)
+    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=14, spaceAfter=12, textColor=colors.HexColor('#1e40af'))
+    normal_style = ParagraphStyle('CustomNormal', parent=styles['Normal'], fontSize=11, spaceAfter=6)
+    
+    story = []
+    
+    # Title based on section
+    section_titles = {
+        "all": "Cartella Clinica Completa",
+        "anagrafica": "Anagrafica e Anamnesi",
+        "medicazione": "Schede Medicazione",
+        "impianto": "Schede Impianto PICC"
+    }
+    title = f"{section_titles.get(section, 'Cartella Clinica')} - {patient.get('cognome', '')} {patient.get('nome', '')}"
+    story.append(Paragraph(title, title_style))
+    story.append(Spacer(1, 20))
+    
+    # SEZIONE ANAGRAFICA - always show for 'all' and 'anagrafica'
+    if section in ["all", "anagrafica"]:
+        story.append(Paragraph("Dati Anagrafici", heading_style))
+        info_data = [
+            ["Nome:", patient.get('nome', '-')],
+            ["Cognome:", patient.get('cognome', '-')],
+            ["Tipo:", patient.get('tipo', '-')],
+            ["Codice Fiscale:", patient.get('codice_fiscale', '-')],
+            ["Data di Nascita:", patient.get('data_nascita', '-')],
+            ["Sesso:", patient.get('sesso', '-')],
+            ["Telefono:", patient.get('telefono', '-')],
+            ["Email:", patient.get('email', '-')],
+            ["Medico di Base:", patient.get('medico_base', '-')],
+            ["Stato:", patient.get('status', '-')],
+        ]
+        table = Table(info_data, colWidths=[4*cm, 12*cm])
+        table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 20))
+        
+        # Anamnesi section
+        if patient.get('anamnesi') or patient.get('terapia_in_atto') or patient.get('allergie'):
+            story.append(Paragraph("Anamnesi", heading_style))
+            if patient.get('anamnesi'):
+                story.append(Paragraph(f"<b>Anamnesi:</b> {patient.get('anamnesi', '-')}", normal_style))
+            if patient.get('terapia_in_atto'):
+                story.append(Paragraph(f"<b>Terapia in Atto:</b> {patient.get('terapia_in_atto', '-')}", normal_style))
+            if patient.get('allergie'):
+                story.append(Paragraph(f"<b>Allergie:</b> {patient.get('allergie', '-')}", normal_style))
+            story.append(Spacer(1, 20))
+    
+    # SEZIONE MEDICAZIONE - show for 'all' and 'medicazione'
+    if section in ["all", "medicazione"] and schede_med:
+        story.append(Paragraph("Schede Medicazione MED", heading_style))
+        for idx, scheda in enumerate(schede_med, 1):
+            story.append(Paragraph(f"<b>Medicazione #{idx} - Data: {scheda.get('data_compilazione', '-')}</b>", normal_style))
+            story.append(Paragraph(f"Fondo: {', '.join(scheda.get('fondo', [])) or '-'}", normal_style))
+            story.append(Paragraph(f"Margini: {', '.join(scheda.get('margini', [])) or '-'}", normal_style))
+            story.append(Paragraph(f"Cute perilesionale: {', '.join(scheda.get('cute_perilesionale', [])) or '-'}", normal_style))
+            story.append(Paragraph(f"Essudato Quantità: {scheda.get('essudato_quantita', '-')}", normal_style))
+            story.append(Paragraph(f"Essudato Tipo: {', '.join(scheda.get('essudato_tipo', [])) or '-'}", normal_style))
+            if scheda.get('medicazione'):
+                story.append(Paragraph(f"Medicazione: {scheda.get('medicazione', '-')}", normal_style))
+            if scheda.get('prossimo_cambio'):
+                story.append(Paragraph(f"Prossimo Cambio: {scheda.get('prossimo_cambio', '-')}", normal_style))
+            if scheda.get('firma'):
+                story.append(Paragraph(f"Firma Operatore: {scheda.get('firma', '-')}", normal_style))
+            story.append(Spacer(1, 15))
+        story.append(Spacer(1, 10))
+    
+    # SEZIONE IMPIANTO PICC - show for 'all' and 'impianto' (only complete)
+    if section in ["all", "impianto"]:
+        schede_complete = [s for s in schede_impianto if s.get('scheda_type') == 'completa']
+        if schede_complete:
+            story.append(Paragraph("Schede Impianto PICC (Complete)", heading_style))
+            
+            for idx, scheda in enumerate(schede_complete, 1):
+                if idx > 1:
+                    from reportlab.platypus import PageBreak
+                    story.append(PageBreak())
+                
+                story.append(Paragraph(f"<b>Scheda Impianto #{idx}</b>", normal_style))
+                story.append(Spacer(1, 10))
+                
+                def cb(checked):
+                    return "[X]" if checked else "[  ]"
+                
+                def get_scheda_val(key, default=""):
+                    val = scheda.get(key)
+                    return default if val is None else val
+                
+                # Header info
+                data_impianto = scheda.get('data_posizionamento') or scheda.get('data_impianto') or '-'
+                story.append(Paragraph(f"<b>Data Impianto:</b> {data_impianto}", normal_style))
+                story.append(Paragraph(f"<b>Presidio:</b> {get_scheda_val('presidio_ospedaliero', '-')}", normal_style))
+                story.append(Paragraph(f"<b>U.O.:</b> {get_scheda_val('unita_operativa', '-')}", normal_style))
+                story.append(Spacer(1, 10))
+                
+                # Tipo catetere
+                tipo_opts = [
+                    ("cvc_non_tunnellizzato", "CVC non tunnellizzato"),
+                    ("cvc_tunnellizzato", "CVC tunnellizzato"),
+                    ("picc", "PICC"),
+                    ("port", "PORT"),
+                    ("midline", "Midline"),
+                ]
+                tipo = get_scheda_val('tipo_catetere')
+                tipo_line = "<b>TIPO DI CATETERE:</b> " + "  ".join([f"{cb(tipo == opt[0])} {opt[1]}" for opt in tipo_opts])
+                story.append(Paragraph(tipo_line, normal_style))
+                
+                # Posizionamento
+                braccio = get_scheda_val('braccio')
+                vena = get_scheda_val('vena')
+                pos_line = f"<b>POSIZIONAMENTO:</b> {cb(braccio == 'dx')} Braccio Dx  {cb(braccio == 'sn')} Braccio Sn    "
+                pos_line += f"<b>Vena:</b> {cb(vena == 'basilica')} Basilica  {cb(vena == 'cefalica')} Cefalica  {cb(vena == 'brachiale')} Brachiale"
+                story.append(Paragraph(pos_line, normal_style))
+                story.append(Paragraph(f"<b>Exit-site:</b> {get_scheda_val('exit_site_cm', '-')} cm", normal_style))
+                story.append(Spacer(1, 8))
+                
+                # Procedure con checkbox SI/NO
+                procedures = [
+                    ('valutazione_sito', 'VALUTAZIONE MIGLIOR SITO DI INSERIMENTO'),
+                    ('ecoguidato', 'IMPIANTO ECOGUIDATO'),
+                    ('igiene_mani', 'IGIENE DELLE MANI'),
+                    ('precauzioni_barriera', 'UTILIZZO MASSIME PRECAUZIONI DI BARRIERA'),
+                ]
+                for key, label in procedures:
+                    val = get_scheda_val(key)
+                    line = f"<b>{label}:</b>  {cb(val == True)} SI  {cb(val == False)} NO"
+                    story.append(Paragraph(line, normal_style))
+                
+                # Disinfezione
+                disinfezione = get_scheda_val('disinfezione') or []
+                dis_line = f"<b>DISINFEZIONE:</b>  {cb('clorexidina_2' in disinfezione)} Clorexidina 2%  {cb('iodiopovidone' in disinfezione)} Iodiopovidone"
+                story.append(Paragraph(dis_line, normal_style))
+                
+                # Dispositivi
+                dispositivi = [
+                    ('sutureless_device', 'SUTURELESS DEVICE'),
+                    ('medicazione_trasparente', 'MEDICAZIONE TRASPARENTE'),
+                    ('medicazione_occlusiva', 'MEDICAZIONE OCCLUSIVA'),
+                    ('controllo_rx', 'CONTROLLO RX POST-INSERIMENTO'),
+                    ('controllo_ecg', 'CONTROLLO ECG POST-INSERIMENTO'),
+                ]
+                for key, label in dispositivi:
+                    val = get_scheda_val(key)
+                    line = f"<b>{label}:</b>  {cb(val == True)} SI  {cb(val == False)} NO"
+                    story.append(Paragraph(line, normal_style))
+                
+                # Modalità
+                modalita = get_scheda_val('modalita')
+                mod_line = f"<b>MODALITÀ:</b>  {cb(modalita == 'emergenza')} EMERGENZA  {cb(modalita == 'urgenza')} URGENZA  {cb(modalita == 'elezione')} ELEZIONE"
+                story.append(Paragraph(mod_line, normal_style))
+                
+                # Motivazione
+                motivazione = get_scheda_val('motivazione') or []
+                motiv_opts = [("chemioterapia", "Chemioterapia"), ("difficolta_vene", "Difficoltà vene"), 
+                              ("terapia_prolungata", "Terapia prolungata"), ("monitoraggio", "Monitoraggio")]
+                motiv_line = "<b>MOTIVAZIONE:</b>  " + "  ".join([f"{cb(m[0] in motivazione)} {m[1]}" for m in motiv_opts])
+                story.append(Paragraph(motiv_line, normal_style))
+                
+                # Operatore
+                story.append(Spacer(1, 8))
+                story.append(Paragraph(f"<b>OPERATORE:</b> {get_scheda_val('operatore', '-')}", normal_style))
+                
+                if scheda.get('note'):
+                    story.append(Paragraph(f"<b>Note:</b> {scheda.get('note', '')}", normal_style))
+                
+                story.append(Spacer(1, 15))
+            story.append(Spacer(1, 10))
+        
+        # Gestione PICC (monthly)
+        if schede_gestione:
+            story.append(Spacer(1, 20))
+            story.append(Paragraph("Schede Gestione PICC (Accessi Venosi)", heading_style))
+            
+            gestione_items = [
+                ("data_giorno_mese", "Data (giorno/mese)"),
+                ("uso_precauzioni_barriera", "Uso massime precauzioni barriera"),
+                ("lavaggio_mani", "Lavaggio mani"),
+                ("guanti_non_sterili", "Uso guanti non sterili"),
+                ("cambio_guanti_sterili", "Cambio guanti con guanti sterili"),
+                ("rimozione_medicazione_sutureless", "Rimozione medicazione e sostituzione sutureless"),
+                ("rimozione_medicazione_straordinaria", "Rimozione medicazione ord/straordinaria"),
+                ("ispezione_sito", "Ispezione del sito"),
+                ("sito_dolente", "Sito dolente"),
+                ("edema_arrossamento", "Presenza di edema/arrossamento"),
+                ("disinfezione_sito", "Disinfezione del sito"),
+                ("exit_site_cm", "Exit-site cm"),
+                ("fissaggio_sutureless", "Fissaggio catetere con sutureless device"),
+                ("medicazione_trasparente", "Medicazione semipermeabile trasparente"),
+                ("lavaggio_fisiologica", "Lavaggio con fisiologica 10cc/20cc"),
+                ("disinfezione_clorexidina", "Disinfezione Clorexidina 2%"),
+                ("difficolta_aspirazione", "Difficoltà di aspirazione"),
+                ("difficolta_iniezione", "Difficoltà iniezione"),
+                ("medicazione_clorexidina_prolungato", "Medicazione Clorexidina rilascio prol."),
+                ("port_protector", "Utilizzo Port Protector"),
+                ("lock_eparina", "Lock eparina per lavaggi"),
+                ("sostituzione_set", "Sostituzione set infusione"),
+                ("ore_sostituzione_set", "Ore da precedente sostituzione set"),
+                ("febbre", "Febbre"),
+                ("emocoltura", "Prelievo emocoltura"),
+                ("emocoltura_positiva", "Emocoltura positiva per CVC"),
+                ("trasferimento", "Trasferimento altra struttura"),
+                ("rimozione_cvc", "Rimozione CVC"),
+                ("sigla_operatore", "SIGLA OPERATORE"),
+            ]
+            
+            for scheda in schede_gestione:
+                story.append(Paragraph(f"<b>Mese: {scheda.get('mese', '-')}</b>", normal_style))
+                giorni = scheda.get('giorni', {})
+                
+                if giorni:
+                    sorted_dates = sorted(giorni.keys())
+                    
+                    for chunk_start in range(0, len(sorted_dates), 10):
+                        chunk_dates = sorted_dates[chunk_start:chunk_start + 10]
+                        header_row = ["Attività"] + [d.split("-")[-1] for d in chunk_dates]
+                        table_data = [header_row]
+                        
+                        for item_id, item_label in gestione_items:
+                            row = [item_label]
+                            for date_str in chunk_dates:
+                                val = giorni.get(date_str, {}).get(item_id, "-")
+                                row.append(val if val else "-")
+                            table_data.append(row)
+                        
+                        col_widths = [5*cm] + [1.2*cm] * len(chunk_dates)
+                        table = Table(table_data, colWidths=col_widths)
+                        table.setStyle(TableStyle([
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTNAME', (0, 1), (0, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 0), (-1, -1), 6),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#166534')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                            ('TOPPADDING', (0, 0), (-1, -1), 2),
+                            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')]),
+                        ]))
+                        story.append(table)
+                        story.append(Spacer(1, 10))
+                    
+                    if scheda.get('note'):
+                        story.append(Paragraph(f"<b>Note:</b> {scheda.get('note', '')}", normal_style))
+                else:
+                    story.append(Paragraph("Nessuna medicazione registrata per questo mese.", normal_style))
+                
+                story.append(Spacer(1, 15))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def generate_patient_pdf(patient: dict, schede_med: list, schede_impianto: list, schede_gestione: list, photos: list) -> bytes:
     """Generate a PDF with patient data - NO allegati, NO foto in scheda MED, only COMPLETE scheda impianto"""
     buffer = io.BytesIO()
