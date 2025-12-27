@@ -530,7 +530,16 @@ async def create_patient(data: PatientCreate, payload: dict = Depends(verify_tok
     if data.ambulatorio == Ambulatorio.VILLA_GINESTRE and data.tipo != PatientType.PICC:
         raise HTTPException(status_code=400, detail="Villa delle Ginestre gestisce solo pazienti PICC")
     
-    patient = Patient(**data.model_dump())
+    # Generate unique patient code
+    codice_paziente = generate_patient_code(data.nome, data.cognome)
+    # Ensure uniqueness
+    while await db.patients.find_one({"codice_paziente": codice_paziente}):
+        codice_paziente = generate_patient_code(data.nome, data.cognome)
+    
+    patient_data = data.model_dump()
+    patient_data["codice_paziente"] = codice_paziente
+    patient_data["scheda_med_counter"] = 0
+    patient = Patient(**patient_data)
     doc = patient.model_dump()
     await db.patients.insert_one(doc)
     return patient
