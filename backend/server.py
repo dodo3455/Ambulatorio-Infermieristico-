@@ -1521,32 +1521,110 @@ def generate_patient_pdf(patient: dict, schede_med: list, schede_impianto: list,
             story.append(Spacer(1, 15))
         story.append(Spacer(1, 10))
     
-    # SEZIONE 4: Schede Impianto PICC - SOLO schede COMPLETE (no semplificata)
-    # Filtro solo schede complete (priorità a complete)
-    schede_complete = [s for s in schede_impianto if s.get('scheda_type') != 'semplificata']
+    # SEZIONE 4: Schede Impianto PICC - SOLO schede COMPLETE nel formato ufficiale
+    schede_complete = [s for s in schede_impianto if s.get('scheda_type') == 'completa']
     if schede_complete:
         story.append(Paragraph("Schede Impianto PICC (Complete)", heading_style))
+        
         for idx, scheda in enumerate(schede_complete, 1):
-            story.append(Paragraph(f"<b>Impianto #{idx} - Data: {scheda.get('data_impianto', '-')}</b>", normal_style))
-            story.append(Paragraph(f"Presidio: {scheda.get('presidio_impianto', '-')}", normal_style))
-            story.append(Paragraph(f"Tipo Catetere: {scheda.get('tipo_catetere', '-')}", normal_style))
-            story.append(Paragraph(f"Sede: {scheda.get('sede', '-')}", normal_style))
-            story.append(Paragraph(f"Braccio: {'Destro' if scheda.get('braccio') == 'dx' else 'Sinistro' if scheda.get('braccio') == 'sn' else '-'}", normal_style))
-            story.append(Paragraph(f"Vena: {scheda.get('vena', '-')}", normal_style))
-            story.append(Paragraph(f"Exit-site: {scheda.get('exit_site_cm', '-')} cm", normal_style))
-            story.append(Paragraph(f"Tunnelizzazione: {'Sì' if scheda.get('tunnelizzazione') else 'No'}", normal_style))
-            story.append(Paragraph(f"Ecoguidato: {'Sì' if scheda.get('ecoguidato') else 'No'}", normal_style))
-            story.append(Paragraph(f"Precauzioni Barriera: {'Sì' if scheda.get('precauzioni_barriera') else 'No'}", normal_style))
-            story.append(Paragraph(f"Disinfezione: {scheda.get('disinfettante', '-')}", normal_style))
-            story.append(Paragraph(f"Sutureless Device: {'Sì' if scheda.get('sutureless_device') else 'No'}", normal_style))
-            story.append(Paragraph(f"Medicazione Trasparente: {'Sì' if scheda.get('medicazione_trasparente') else 'No'}", normal_style))
-            story.append(Paragraph(f"Controllo RX: {'Sì' if scheda.get('controllo_rx') else 'No'}", normal_style))
-            story.append(Paragraph(f"Controllo ECG: {'Sì' if scheda.get('controllo_ecg') else 'No'}", normal_style))
-            story.append(Paragraph(f"Modalità: {scheda.get('modalita', '-')}", normal_style))
-            story.append(Paragraph(f"Motivazione: {scheda.get('motivazione', '-')}", normal_style))
-            story.append(Paragraph(f"Operatore: {scheda.get('operatore', '-')}", normal_style))
+            # Aggiungi PageBreak se non è la prima scheda
+            if idx > 1:
+                story.append(PageBreak())
+            
+            # Usa lo stesso formato del PDF singolo
+            story.append(Paragraph(f"<b>Scheda Impianto #{idx}</b>", normal_style))
+            story.append(Spacer(1, 10))
+            
+            # Helper functions for this scheda
+            def cb(checked):
+                if checked:
+                    return "[X]"
+                else:
+                    return "[  ]"
+            
+            def get_scheda_val(key, default=""):
+                val = scheda.get(key)
+                if val is None:
+                    return default
+                return val
+            
+            # Header info
+            data_impianto = scheda.get('data_posizionamento') or scheda.get('data_impianto') or '-'
+            story.append(Paragraph(f"<b>Data Impianto:</b> {data_impianto}", normal_style))
+            story.append(Paragraph(f"<b>Presidio:</b> {get_scheda_val('presidio_ospedaliero', '-')}", normal_style))
+            story.append(Paragraph(f"<b>U.O.:</b> {get_scheda_val('unita_operativa', '-')}", normal_style))
+            story.append(Spacer(1, 10))
+            
+            # Tipo catetere
+            tipo_opts = [
+                ("cvc_non_tunnellizzato", "CVC non tunnellizzato"),
+                ("cvc_tunnellizzato", "CVC tunnellizzato"),
+                ("picc", "PICC"),
+                ("port", "PORT"),
+                ("midline", "Midline"),
+            ]
+            tipo = get_scheda_val('tipo_catetere')
+            tipo_line = "<b>TIPO DI CATETERE:</b> " + "  ".join([f"{cb(tipo == opt[0])} {opt[1]}" for opt in tipo_opts])
+            story.append(Paragraph(tipo_line, normal_style))
+            
+            # Posizionamento
+            braccio = get_scheda_val('braccio')
+            vena = get_scheda_val('vena')
+            pos_line = f"<b>POSIZIONAMENTO:</b> {cb(braccio == 'dx')} Braccio Dx  {cb(braccio == 'sn')} Braccio Sn    "
+            pos_line += f"<b>Vena:</b> {cb(vena == 'basilica')} Basilica  {cb(vena == 'cefalica')} Cefalica  {cb(vena == 'brachiale')} Brachiale"
+            story.append(Paragraph(pos_line, normal_style))
+            story.append(Paragraph(f"<b>Exit-site:</b> {get_scheda_val('exit_site_cm', '-')} cm", normal_style))
+            story.append(Spacer(1, 8))
+            
+            # Procedure con checkbox SI/NO
+            procedures = [
+                ('valutazione_sito', 'VALUTAZIONE MIGLIOR SITO DI INSERIMENTO'),
+                ('ecoguidato', 'IMPIANTO ECOGUIDATO'),
+                ('igiene_mani', 'IGIENE DELLE MANI'),
+                ('precauzioni_barriera', 'UTILIZZO MASSIME PRECAUZIONI DI BARRIERA'),
+            ]
+            for key, label in procedures:
+                val = get_scheda_val(key)
+                line = f"<b>{label}:</b>  {cb(val == True)} SI  {cb(val == False)} NO"
+                story.append(Paragraph(line, normal_style))
+            
+            # Disinfezione
+            disinfezione = get_scheda_val('disinfezione') or []
+            dis_line = f"<b>DISINFEZIONE:</b>  {cb('clorexidina_2' in disinfezione)} Clorexidina 2%  {cb('iodiopovidone' in disinfezione)} Iodiopovidone"
+            story.append(Paragraph(dis_line, normal_style))
+            
+            # Dispositivi
+            dispositivi = [
+                ('sutureless_device', 'SUTURELESS DEVICE'),
+                ('medicazione_trasparente', 'MEDICAZIONE TRASPARENTE'),
+                ('medicazione_occlusiva', 'MEDICAZIONE OCCLUSIVA'),
+                ('controllo_rx', 'CONTROLLO RX POST-INSERIMENTO'),
+                ('controllo_ecg', 'CONTROLLO ECG POST-INSERIMENTO'),
+            ]
+            for key, label in dispositivi:
+                val = get_scheda_val(key)
+                line = f"<b>{label}:</b>  {cb(val == True)} SI  {cb(val == False)} NO"
+                story.append(Paragraph(line, normal_style))
+            
+            # Modalità
+            modalita = get_scheda_val('modalita')
+            mod_line = f"<b>MODALITÀ:</b>  {cb(modalita == 'emergenza')} EMERGENZA  {cb(modalita == 'urgenza')} URGENZA  {cb(modalita == 'elezione')} ELEZIONE"
+            story.append(Paragraph(mod_line, normal_style))
+            
+            # Motivazione
+            motivazione = get_scheda_val('motivazione') or []
+            motiv_opts = [("chemioterapia", "Chemioterapia"), ("difficolta_vene", "Difficoltà vene"), 
+                          ("terapia_prolungata", "Terapia prolungata"), ("monitoraggio", "Monitoraggio")]
+            motiv_line = "<b>MOTIVAZIONE:</b>  " + "  ".join([f"{cb(m[0] in motivazione)} {m[1]}" for m in motiv_opts])
+            story.append(Paragraph(motiv_line, normal_style))
+            
+            # Operatore
+            story.append(Spacer(1, 8))
+            story.append(Paragraph(f"<b>OPERATORE:</b> {get_scheda_val('operatore', '-')}", normal_style))
+            
             if scheda.get('note'):
-                story.append(Paragraph(f"Note: {scheda.get('note', '-')}", normal_style))
+                story.append(Paragraph(f"<b>Note:</b> {scheda.get('note', '')}", normal_style))
+            
             story.append(Spacer(1, 15))
         story.append(Spacer(1, 10))
     
