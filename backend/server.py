@@ -851,9 +851,11 @@ def generate_scheda_impianto_pdf(scheda: dict, patient: dict) -> bytes:
         return cb(is_checked)
     
     def get_val(key, default=""):
-        """Get value from scheda, return empty string if None"""
+        """Get value from scheda, return default only if None"""
         val = scheda.get(key)
-        return val if val else default
+        if val is None:
+            return default
+        return val
     
     # === HEADER ===
     story.append(Paragraph("SCHEDA IMPIANTO e GESTIONE ACCESSI VENOSI", title_style))
