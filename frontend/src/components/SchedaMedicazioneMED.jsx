@@ -238,17 +238,16 @@ export const SchedaMedicazioneMED = ({ patientId, ambulatorio, schede, onRefresh
     });
   };
 
-  // Generate photo description with date and scheda code
-  const generatePhotoDescription = (dataMedicazione, schedaCodice) => {
+  // Generate photo description with date
+  const generatePhotoDescription = (dataMedicazione) => {
     const dateFormatted = dataMedicazione 
       ? format(new Date(dataMedicazione), "dd/MM/yy", { locale: it })
       : format(new Date(), "dd/MM/yy", { locale: it });
-    const code = schedaCodice || "NUOVO";
-    return `Foto medicazione del ${dateFormatted} - Cod: ${code}`;
+    return `Foto medicazione del ${dateFormatted}`;
   };
 
   // Handle photo upload for scheda
-  const handlePhotoUpload = async (e, schedaId = null, dataMedicazione = null, schedaCodice = null) => {
+  const handlePhotoUpload = async (e, schedaId = null, dataMedicazione = null) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -262,8 +261,7 @@ export const SchedaMedicazioneMED = ({ patientId, ambulatorio, schede, onRefresh
     try {
       // Get the data for description
       const dataScheda = dataMedicazione || (schedaId && selectedScheda?.data_compilazione) || formData.data_compilazione;
-      const codiceScheda = schedaCodice || (schedaId && selectedScheda?.codice) || null;
-      const descrizioneAuto = generatePhotoDescription(dataScheda, codiceScheda);
+      const descrizioneAuto = generatePhotoDescription(dataScheda);
       
       const formDataUpload = new FormData();
       formDataUpload.append("file", file);
@@ -274,9 +272,6 @@ export const SchedaMedicazioneMED = ({ patientId, ambulatorio, schede, onRefresh
       formDataUpload.append("scheda_med_id", schedaId || "pending");
       formDataUpload.append("file_type", "image");
       formDataUpload.append("descrizione", descrizioneAuto);
-      if (codiceScheda) {
-        formDataUpload.append("scheda_codice", codiceScheda);
-      }
 
       const response = await apiClient.post("/photos", formDataUpload, {
         headers: { "Content-Type": "multipart/form-data" },
